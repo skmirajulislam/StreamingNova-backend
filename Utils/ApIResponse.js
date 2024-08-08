@@ -7,4 +7,4 @@ class ApIResponse {
     }
 }
 
-export default ApIResponse;
+module.exports = ApIResponse;
