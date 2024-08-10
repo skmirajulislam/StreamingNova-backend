@@ -1,23 +1,26 @@
 const express = require('express');
 const router = express.Router();
-const upload = require('../Middleware/multer.middleware')
+const upload = require('../Middleware/multer.middleware');
+const varifyJwt = require('../Middleware/auth.middleware');
 
-/* Imports Controllers */
-const { registerUser, postTesting, getTesting } = require('../Controllers/user.controller');
+// Import Controllers
+const { registerUser, postTesting, getTesting, logOutUser } = require('../Controllers/user.controller');
 
 
-/* Tell me which controller you want to fire On Internet through middleware Users by using which HTTP method */
+// Define routes
 router.post('/postTester', postTesting);
-router.post('/register', registerUser);
-router.get('/getTester', upload.fields([
-    {
-        name: "avater",
-        maxCount: 1
-    },
-    {
-        name: "coverImage",
-        maxCount: 1
-    }
-]), getTesting);
+router.get('/getTester', getTesting);
+
+// Route for user registration with file upload
+router.post(
+    '/register',
+    upload.fields([
+        { name: 'avater', maxCount: 1 },
+        { name: 'coverImage', maxCount: 1 },
+    ]),
+    registerUser
+);
+
+router.post('/logout',varifyJwt,logOutUser);
 
 module.exports = router;

@@ -30,21 +30,21 @@ const userSchema = mongoose.Schema(
             type: String, // cloudinary Service
             required: true
         },
-        coverimage: {
+        coverImage: {
             type: String, // cloudinary Service
         },
-        watchHistory: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Video',
-            required: true
-        },
+        watchHistory: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Video',
+            }
+        ],
         password: {
             type: String,
             required: [true, 'Password is Required!']
         },
         refreshTocken: {
             type: String,
-            required: true
         }
     },
     {
@@ -69,7 +69,7 @@ userSchema.methods.isPasswordCorrect = async function (password) {
 
 /* JWT authorization uses a JWT to represent the user's identity and access rights */
 /* for generating access tocken using jwt */
-userSchema.methods.generateAccessTocken = function (){
+userSchema.methods.generateAccessTocken = function () {
     return jwt.sign(
         {
             _id: this._id,
@@ -85,7 +85,7 @@ userSchema.methods.generateAccessTocken = function (){
 }
 
 /* for generating Refresh tocken using jwt */
-userSchema.methods.generateRefreshTocken = function (){
+userSchema.methods.generateRefreshTocken = function () {
     return jwt.sign(
         {
             _id: this._id,

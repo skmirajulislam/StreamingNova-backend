@@ -1,4 +1,4 @@
-import { v2 as cloudinary } from 'cloudinary';
+const cloudinary = require('cloudinary').v2;
 require('dotenv').config()
 const fs = require('fs');
 
@@ -28,6 +28,7 @@ async function uploadOnCloudinary(localFilepath) {
 
         console.log(`${uploadResult.url} is Uploded in Cloudinary!`);
 
+        fs.unlinkSync(localFilepath);
         return uploadResult;
 
     } catch (err) {
@@ -36,4 +37,4 @@ async function uploadOnCloudinary(localFilepath) {
     }
 }
 
-export default uploadOnCloudinary;
+module.exports = uploadOnCloudinary;

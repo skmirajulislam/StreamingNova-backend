@@ -15,4 +15,4 @@ class ApIError extends Error {
     }
 }
 
-export default ApIError;
+module.exports = ApIError;
