@@ -3,7 +3,7 @@ const User = require('../Models/user.models');
 const ApIError = require('../Utils/ApIError');
 const uploadOnCloudinary = require('../Utils/cloudINary');
 const ApIResponse = require('../Utils/ApIResponse');
-
+const jwt = require('jsonwebtoken');
 /**
  * GET /testing
  * This controller handles GET requests to the /testing endpoint.
@@ -87,7 +87,7 @@ const registerUser = asyncHandler(async (req, res,) => {
         const avaterLocalPath = req.files?.avater?.[0]?.path;
         let coverImageLocalPath;
         if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
-            coverImageLocalPath = req.files?.coverImage?.[0]?.path;
+            coverImageLocalPath = req.files?.coverImage?.[1]?.path;
             console.log('we have cover Image ', coverImageLocalPath)
         }
 
@@ -148,37 +148,42 @@ const generateAccessAndRefreshTokens = async (userId) => {
 const loginUser = asyncHandler(async (req, res) => {
     const { email, username, password } = req.body;
 
-    if (!username || !email) {
+    if (!username && !email) {
         throw new ApIError(400, "username and password is required");
     }
 
-    const user = User.findOne({
+    // Add await to resolve the promise
+    const user = await User.findOne({
         $or: [{ username }, { email }]
     });
 
+    // Check if user is null
     if (!user) {
         throw new ApIError(400, "user does not exist");
     }
 
+    // Use the isPasswordCorrect method on the resolved user document
     const isPasswordValid = await user.isPasswordCorrect(password);
 
     if (!isPasswordValid) {
-        throw new ApIError(401, "invalid user craditential");
+        throw new ApIError(401, "invalid user credentials");
     }
 
-    const { accesTocken, refreshTocken } = await generateAccessAndRefreshTokens(user._id)
+    const { accesTocken, refreshTocken } = await generateAccessAndRefreshTokens(user._id);
 
-    const loggedInUser = User.findById(user._id).select('-password -refreshTocken');
+    // Add await to resolve the promise
+    const loggedInUser = await User.findById(user._id).select('-password -refreshTocken');
 
-    // cookies Is only modifiable from Server 
+    // Cookies are only modifiable from the server
     const options = {
         httpOnly: true,
-        secure: true
-    }
+        secure: process.env.NODE_ENV === "production" // Only secure in production
+    };
+
 
     res.status(200)
-        .cookies("accessTocken", accesTocken, options)
-        .cookies("refreshTocken", refreshTocken, options)
+        .cookie("accessTocken", accesTocken, options)
+        .cookie("refreshTocken", refreshTocken, options)
         .json(
             new ApIResponse(
                 200,
@@ -187,13 +192,14 @@ const loginUser = asyncHandler(async (req, res) => {
                     accesTocken,
                     refreshTocken
                 },
-                "user logged in sucessfully"
-            ))
-
+                "user logged in successfully"
+            )
+        );
 });
 
+
 const logOutUser = asyncHandler(async (req, res) => {
-    await User.findById(
+    await User.findByIdAndUpdate(
         req.user._id,
         {
             $set: {
@@ -201,27 +207,213 @@ const logOutUser = asyncHandler(async (req, res) => {
             }
         },
         {
-            new: true // Return only updated new value
-        } 
-    )
+            new: true // Return the updated document
+        }
+    );
 
+    // Cookies are only modifiable from the server
     const options = {
         httpOnly: true,
-        secure: true
-    }
+        secure: process.env.NODE_ENV === "production" // Only secure in production
+    };
 
     return res.status(200)
-    .clearCookie("accessTocken", accesTocken, options)
-    .clearCookie("refreshTocken", refreshTocken, options)
-    .json(
-        new ApIResponse(
-            200,
-            {},
-            "user logged out sucessfully"
-        ))
+        .clearCookie("accessTocken", options)
+        .clearCookie("refreshTocken", options)
+        .json(
+            new ApIResponse(
+                200,
+                {},
+                "user logged out successfully"
+            )
+        );
+});
 
+const refreshAccessToken = asyncHandler(async (req, res) => {
+    const incomingRefreshTocken = req.cookies?.refreshTocken || req.body?.refreshToken;
+
+    if (!incomingRefreshTocken) {
+        throw new ApIError(401, "Unauthorized request");
+    }
+
+    try {
+        const decodedTocken = jwt.verify(
+            incomingRefreshTocken,
+            process.env.REFRESH_TOCKEN_SECRET // Ensure this matches your environment variable
+        );
+
+        const user = await User.findById(decodedTocken?._id);
+
+        if (!user) {
+            throw new ApIError(401, "Invalid refresh token");
+        }
+
+        if (incomingRefreshTocken !== user?.refreshTocken) {
+            throw new ApIError(401, "Refresh token is expired or used");
+        }
+
+        const options = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+        };
+
+        const { accesTocken, newRefreshTocken } = await generateAccessAndRefreshTokens(user._id);
+
+        return res
+            .status(200)
+            .cookie("accessTocken", accesTocken, options)
+            .cookie("refreshTocken", newRefreshTocken, options)
+            .json(
+                new ApIResponse(
+                    200,
+                    { accesTocken, refreshTocken: newRefreshTocken },
+                    "Access token refreshed"
+                )
+            );
+    } catch (error) {
+        console.error("Error refreshing token:", error);
+        throw new ApIError(401, error?.message || "Invalid refresh token");
+    }
 });
 
 
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+    const { oldPassword, newPassword, confPassword } = req.body;
+
+    if (!(newPassword === confPassword)) {
+        throw new ApIError(401, "invalid new Password");
+    }
+
+    const user = await User.findById(req.user?._id);
+
+    const isPasswordValid = await user.isPasswordCorrect(oldPassword);
+
+    if (!isPasswordValid) {
+        throw new ApIError(401, "invalid old Password");
+    }
+
+    user.password = newPassword;
+    await user.save({ validateBeforeSave: false });
+
+    return res.status(200).json(
+        new ApIResponse(
+            200,
+            {},
+            "password changed successfully"
+        )
+    );
+});
+
+
+const getCurrentUseer = asyncHandler(async (req, res) => {
+    return res.status(200).json(
+        new ApIResponse(
+            200,
+            req.user,
+            "current user fetched successfully"
+        )
+    );
+});
+
+
+const updateAccountDetails = asyncHandler(async (req, res) => {
+    const { fullname, email } = req.body;
+
+    if (!fullname || !email) {
+        throw new ApIError(401, "fullname and email is required")
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                fullname,
+                email: email
+            }
+        },
+        { new: true }
+    ).select("-password");
+
+    return res.status(200).json(
+        new ApIResponse(
+            200,
+            user,
+            "user details updated successfully"
+        )
+    );
+});
+
+const updateUserAvater = asyncHandler(async (req, res) => {
+    const avaterLocalPath = req.file?.path;
+
+    if (!avaterLocalPath) {
+        throw new ApIError(401, "Avatar file is missing");
+    }
+
+    const avater = await uploadOnCloudinary(avaterLocalPath);
+
+    if (!avater.url) {
+        throw new ApIError(401, "Avatar file is required")
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                avatar: avater.url
+            }
+        },
+        {
+            new: true
+        }
+    ).select("-password");
+
+    return res.status(200).json(
+        new ApIResponse(200, user, "Avater updated Successfully")
+    )
+});
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+    const coverImageLocalPath = req.file?.path;
+
+    if (!coverImageLocalPath) {
+        throw new ApIError(401, "Cover image file is missing");
+    }
+
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+
+    if (!coverImage.url) {
+        throw new ApIError(401, "Cover image file is required")
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                coverImage: coverImage.url
+            }
+        },
+        {
+            new: true
+        }
+    ).select("-password");
+
+    return res.status(200).json(
+        new ApIResponse(200, user, "Cover Image updated Successfully")
+    )
+});
+
 // Export controllers for use in routes
-module.exports = { getTesting, postTesting, registerUser, loginUser, logOutUser };
+module.exports = {
+    getTesting,
+    postTesting,
+    registerUser,
+    loginUser,
+    logOutUser,
+    refreshAccessToken,
+    changeCurrentPassword,
+    getCurrentUseer,
+    updateAccountDetails,
+    updateUserAvater,
+    updateUserCoverImage
+};
