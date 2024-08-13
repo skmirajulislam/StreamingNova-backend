@@ -1,7 +1,7 @@
 const asyncHandler = require('../Utils/AsyncHandler');
 const User = require('../Models/user.models');
 const ApIError = require('../Utils/ApIError');
-const uploadOnCloudinary = require('../Utils/cloudINary');
+const { uploadOnCloudinary, deleteImage } = require('../Utils/cloudINary');
 const ApIResponse = require('../Utils/ApIResponse');
 const jwt = require('jsonwebtoken');
 /**
@@ -305,7 +305,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 });
 
 
-const getCurrentUseer = asyncHandler(async (req, res) => {
+const getCurrentUser = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new ApIResponse(
             200,
@@ -353,10 +353,23 @@ const updateUserAvater = asyncHandler(async (req, res) => {
     const avater = await uploadOnCloudinary(avaterLocalPath);
 
     if (!avater.url) {
-        throw new ApIError(401, "Avatar file is required")
+        throw new ApIError(401, "Avatar file is required");
     }
 
-    const user = await User.findByIdAndUpdate(
+    // Retrieve user before using it
+    const user = await User.findById(req.user?._id);
+    const oldAvatarUrl = user?.avatar;
+
+    if (oldAvatarUrl) {
+        const oldPublicId = extractPublicId(oldAvatarUrl);
+
+        if (oldPublicId) {
+            // Delete the old avatar from Cloudinary
+            await deleteImage(oldPublicId);
+        }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
         req.user?._id,
         {
             $set: {
@@ -369,9 +382,10 @@ const updateUserAvater = asyncHandler(async (req, res) => {
     ).select("-password");
 
     return res.status(200).json(
-        new ApIResponse(200, user, "Avater updated Successfully")
-    )
+        new ApIResponse(200, updatedUser, "Avatar updated Successfully")
+    );
 });
+
 
 const updateUserCoverImage = asyncHandler(async (req, res) => {
     const coverImageLocalPath = req.file?.path;
@@ -383,10 +397,23 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
     if (!coverImage.url) {
-        throw new ApIError(401, "Cover image file is required")
+        throw new ApIError(401, "Cover image file is required");
     }
 
-    const user = await User.findByIdAndUpdate(
+    // Retrieve user before using it
+    const user = await User.findById(req.user?._id);
+    const oldCoverImageUrl = user?.coverImage;
+
+    if (oldCoverImageUrl) {
+        const oldPublicId = extractPublicId(oldCoverImageUrl);
+
+        if (oldPublicId) {
+            // Delete the old cover image from Cloudinary
+            await deleteImage(oldPublicId);
+        }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
         req.user?._id,
         {
             $set: {
@@ -399,9 +426,31 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     ).select("-password");
 
     return res.status(200).json(
-        new ApIResponse(200, user, "Cover Image updated Successfully")
-    )
+        new ApIResponse(200, updatedUser, "Cover Image updated Successfully")
+    );
 });
+
+
+const extractPublicId = (url) => {
+    try {
+        // Parse the URL
+        const parsedUrl = new URL(url);
+
+        // Extract the pathname and split it into parts
+        const pathParts = parsedUrl.pathname.split('/');
+
+        // Get the last part, which includes the publicId and extension
+        const lastPart = pathParts.pop();
+
+        // Extract the publicId by removing the file extension
+        const [publicId] = lastPart.split('.');
+
+        return publicId;
+    } catch (error) {
+        console.error('Invalid URL:', error);
+        return null; // Return null or handle the error as needed
+    }
+}
 
 // Export controllers for use in routes
 module.exports = {
@@ -412,7 +461,7 @@ module.exports = {
     logOutUser,
     refreshAccessToken,
     changeCurrentPassword,
-    getCurrentUseer,
+    getCurrentUser,
     updateAccountDetails,
     updateUserAvater,
     updateUserCoverImage
