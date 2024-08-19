@@ -15,7 +15,9 @@ const {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvater,
-    updateUserCoverImage
+    updateUserCoverImage,
+    getUserChannelProfile,
+    getWatchHistory
 } = require('../Controllers/user.controller');
 
 
@@ -24,14 +26,19 @@ router.post('/postTester', postTesting);
 router.get('/getTester', getTesting);
 
 // Route for user registration with file upload
-router.post(
-    '/register',
+router.route("/register").post(
     upload.fields([
-        { name: 'avater', maxCount: 1 },
-        { name: 'coverImage', maxCount: 1 },
+        {
+            name: "avater",
+            maxCount: 1
+        }, 
+        {
+            name: "coverImage",
+            maxCount: 1
+        }
     ]),
     registerUser
-);
+    )
 
 router.post("/login", loginUser);
 router.post('/logout', varifyJwt, logOutUser);
@@ -43,6 +50,7 @@ router.get("/current-user",varifyJwt, getCurrentUser);
 router.patch("/update-account", varifyJwt, updateAccountDetails);
 router.patch("/avatar", varifyJwt, upload.single("avatar"), updateUserAvater);
 router.patch("/cover-image", varifyJwt, upload.single("coverImage"), updateUserCoverImage);
-
+router.get("/c/:username",varifyJwt, getUserChannelProfile)
+router.get("/history",varifyJwt, getWatchHistory)
 
 module.exports = router;
