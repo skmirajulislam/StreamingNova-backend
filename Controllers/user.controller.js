@@ -452,6 +452,81 @@ const extractPublicId = (url) => {
     }
 }
 
+
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+    const { username } = req.params;
+
+    if (!username?.trim()) {
+        throw new ApIError(400, "usename is missing");
+    }
+
+    const channel = await User.aggregate([
+        {
+            $match: {
+                username: username?.toLowerCase()
+            }
+        },
+        {
+            $lookup: {
+                from: "subsciptions",
+                localField: "_id",
+                foreignFeild: "channel",
+                as: 'subscribers'
+            }
+        },
+        {
+            $lookup: {
+                from: "subsciptions",
+                localField: "_id",
+                foreignFeild: "subscriber",
+                as: 'subscribedTo'
+            }
+        },
+        {
+            $addFields: {
+                subscriberscount: {
+                    $size: "$subscribers"
+                },
+                channelSubscribedToCount: {
+                    $size: "$subscribedTo"
+                },
+                isSubcribed: {
+                    $cond: {
+                        if: { $in: [req.user?._id, "$subsciptions.subscribers"] },
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                fullname: 1,
+                username: 1,
+                subscriberscount: 1,
+                channelSubscribedToCount: 1,
+                isSubcribed: 1,
+                avatar: 1,
+                coverImage: 1,
+                email: 1
+            }
+        }
+    ]);
+
+    if (!channel?.length) {
+        throw new ApIError(404, "Channel dosent exists");
+    }
+
+    return res.status(200)
+        .json(
+            new ApIResponse(
+                200,
+                channel[0],
+                "user profile fetched successfully"
+            )
+        )
+});
+
 // Export controllers for use in routes
 module.exports = {
     getTesting,
@@ -464,5 +539,6 @@ module.exports = {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvater,
-    updateUserCoverImage
+    updateUserCoverImage,
+    getUserChannelProfile
 };
